@@ -3,10 +3,10 @@
  * Copyright (c) 2016 tm-roamer
  * https://github.com/PT-FED/pt-scrollbar
  * version: 1.0.0
- * 描述: 浏览器的滚动条插件
- * 原则和思路:  不依赖任何框架和类库, 低侵入.
+ * 描述: 模仿浏览器滚动条的插件
+ * 原则和思路:  不依赖任何框架和类库, 低侵入实现.
  * 兼容性: ie11+
- * 支持: requirejs和commonjs和seajs,
+ * 支持: requirejs和commonjs和seajs
  */
 ;(function (parent, fun) {
     if (typeof exports !== 'undefined' && typeof module !== 'undefined') {
@@ -16,219 +16,346 @@
     } else if (typeof define === 'function' && typeof define.cmd === 'object') {
         define(fun);
     } else {
-        parent.scrollbar = fun();
+        parent.scrollbar = fun().instance;
     }
 })(window.pt || window, function (scrollbar) {
 
     // 常量
-    var THROTTLE_TIME = 12,                                // 节流函数的间隔时间单位ms, FPS = 1000 / THROTTLE_TIME
-       
-        PLACEHOLDER = 'placeholder';                       // 占位符
+    var THROTTLE_RESIZE_TIME = 15,      // resize的节流函数的时间间隔, 单位ms, FPS = 1000 / x
+        THROTTLE_WHEEL_TIME = 10,       // wheel的节流函数的时间间隔, 单位ms, FPS = 1000 / x
+        SCROLL_CONTAINER_INDEX = 'pt-scrollbar-container-index',    // 容器自定义属性
+        SCROLL_CONTAINER = 'pt-scrollbar-container',                // 容器 className
+        SCROLL_CONTAINER_HIDE = 'data-pt-scrollbar-hide',           // 容器 隐藏 attribute
+        SCROLL_CONTAINER_SHOW = 'data-pt-scrollbar-show',           // 容器 显示 attribute
+        SCROLL_VERTICAL_RAIL = 'pt-scroll-vertical-rail',           // 垂直滑轨 className
+        SCROLL_VERTICAL_BAR = 'pt-scroll-vertical-bar',             // 垂直滑块 className
+        SCROLL_HORIZONTAL_RAIL = 'pt-scroll-horizontal-rail',       // 水平滑轨 className
+        SCROLL_HORIZONTAL_BAR = 'pt-scroll-horizontal-bar'          // 水平滑块 className
 
     // 默认设置
     var f = function () {};
-    var default = {
+    var setting = {
+        step: 40,               // 每次滑动的步长, 默认20px
+        className: '',          // 给外层容器添加自定义class, 方便定制换肤, 默认为''
+        distance: 0,            // 距离边的间距, 建议采用css来控制间距, 默认 0
+        height: 0,              // 设置容器的高度, 初始化滚动条, 建议css先预置高度, 插件自动计算高, 默认 0
+        width: 0,               // 设置容器的宽度, 初始化滚动条, 建议css先预置宽度, 插件自动计算宽, 默认 0
     };
 
     // 缓存对象
     var cache = {
-        count: 0
+        count: 0,
+        get: function (node) {
+            var content = view.searchUp(node, SCROLL_CONTAINER_INDEX);
+            if(!content) return undefined;
+            return cache[content.getAttribute(SCROLL_CONTAINER_INDEX)]
+        }
     };
 
-    // 属性拷贝
-    function extend(mod, opt) {
-        if (!opt) return mod;
-        var conf = {};
-        for (var attr in mod) {
-            if (typeof opt[attr] !== "undefined") {
-                conf[attr] = opt[attr];
-            } else {
-                conf[attr] = mod[attr];
+    // 工具方法
+    var utils = {
+        // 属性拷贝
+        extend: function (def, opt) {
+            if (!opt) return def;
+            var conf = {};
+            for (var attr in def) {
+                if (typeof opt[attr] !== "undefined") {
+                    conf[attr] = opt[attr];
+                } else {
+                    conf[attr] = def[attr];
+                }
             }
+            return conf;
+        },
+        // 节流函数
+        throttle: function (now, interval) {
+            var time = new Date().getTime();
+            utils.throttle = function (now) {
+                if (now - time > interval) {
+                    time = now;
+                    return true;
+                }
+                return false;
+            };
+            utils.throttle(now, interval);
         }
-        return conf;
-    }
-
-    // 空对象
-    function isEmptyObject(obj) {
-        for (var i in obj) {
-            return false;
-        }
-        return true;
-    }
-
-    // 节流函数
-    function throttle(now) {
-        var time = new Date().getTime();
-        throttle = function (now) {
-            if (now - time > THROTTLE_TIME) {
-                time = now;
-                return true;
-            }
-            return false;
-        };
-        throttle(now);
-    }
-
-    // 异步执行回调
-    function asyncFun(ck) {
-        setTimeout(function () {
-            ck && typeof ck === 'function' && ck();
-        }, 0);
-    }
+    };
 
     // 事件处理对象
     var handleEvent = {
-        init: function (isbind, body) {
+        isDrag: false,              // 是否正在拖拽
+        dragElement: null,          // 拖拽的滑块
+        init: function (isbind) {
             if (this.isbind) return;
             this.isbind = isbind;
-            this.body = body;
             this.unbindEvent();
             this.bindEvent();
         },
-        // 绑定监听
         bindEvent: function () {
+            window.addEventListener('resize', this.resize, false);
             document.addEventListener('mousedown', this.mousedown, false);
             document.addEventListener('mousemove', this.mousemove, false);
             document.addEventListener('mouseup', this.mouseup, false);
+            document.addEventListener('DOMMouseScroll', this.wheel, false);
+            document.addEventListener('mousewheel', this.wheel, false);
             this.isbind = true;
         },
-        // 移除监听
         unbindEvent: function () {
+            window.removeEventListener('resize', this.resize, false);
             document.removeEventListener('mousedown', this.mousedown, false);
             document.removeEventListener('mousemove', this.mousemove, false);
             document.removeEventListener('mouseup', this.mouseup, false);
+            document.removeEventListener('DOMMouseScroll', this.wheel, false);
             this.isbind = false;
         },
-        mousedown: function (event) {
-        },
-        mousemove: function (event) {
-            if (dragdrop.isDrag) {}
-        },
-        mouseup: function (event) {
-            if (dragdrop.isDrag) {                
+        resize: function(event) {
+            if (!utils.throttle(new Date().getTime(), THROTTLE_RESIZE_TIME)) return;
+            for (var prop in cache) {
+                var scroll = cache[prop];
+                if (scroll instanceof Scroll) {
+                    // 检测到内容区是否需要滚动条
+                    if (view.testingScroll(scroll.content)) {
+                        scroll.container.removeAttribute(SCROLL_CONTAINER_HIDE);
+                        view.update(scroll);
+                    } else {
+                        scroll.container.setAttribute(SCROLL_CONTAINER_HIDE, SCROLL_CONTAINER_HIDE);
+                    }
+                }
             }
         },
-    };
+        mousedown: function (event) {
+            var self = handleEvent,
+                target = event.target,         
+                className = target.className;
+            if (className === SCROLL_VERTICAL_BAR) {
+                var scroll = cache[target.getAttribute(SCROLL_CONTAINER_INDEX)],
+                    bar = scroll.bar,
+                    content = scroll.content;
+                if (!scroll) return;
+                self.isDrag = true;
+                self.scroll = scroll;
+                self.offsetY = event.offsetY + view.getOffset(bar).top;
+                self.maxMove = content.offsetHeight - bar.offsetHeight;
+                self.maxTop = content.scrollHeight - content.offsetHeight;
+            }
+        },
+        mousemove: function (event) {
+            // 拖拽滑块
+            var self = handleEvent;
+            if (self.isDrag) {
+                // 将pageY转换成top
+                var scroll = self.scroll,
+                    bar = scroll.bar,
+                    move = event.pageY - self.offsetY;
+                move < 0 && (move = 0);
+                self.maxMove < move && (move = self.maxMove);
+                var top = move * self.maxTop / self.maxMove;
+                view.update(scroll, top);
+            }
+            // 优化: 重置滚动条
+            var scroll = cache.get(event.target);
+            if (!scroll) return;
+            if (view.cacheHeight() !== scroll.content.offsetHeight) {
+                // 这里可以优化定位 ???
+                // scroll.content.scrollTop = 0;
+                // 等比例的放大缩小
+                // console.log(scroll.content.scrollTop);
+                view.update(scroll);
+            }
+        },
+        mouseup: function (event) {
+            var self = handleEvent;
+            if (self.isDrag) {
+                self.isDrag = undefined;
+                self.offsetY = undefined;
+                self.maxMove = undefined;
+                self.maxTop = undefined;
+                self.scroll = null;
+            }
+        },
+        wheel: function(event) {
+            if (!utils.throttle(new Date().getTime(), THROTTLE_WHEEL_TIME)) return;
+            var scroll = cache.get(event.target);
+            if (!scroll) return;
 
-    // 拖拽对象
-    var dragdrop = {
-        isDrag: false,              // 是否正在拖拽
-        dragNode: {                 // 拖拽节点的的关联数据
-            id: undefined,          // 拖拽节点的id
-            node: null,             // 占位符节点的关联数据
-        },
-        dragElement: null,          // 拖拽的dom节点
-        dragstart: function (event, node) {
-        },
-        drag: function (event) {
-        },
-        dragend: function (event) {
+            var delta = 0;
+            if (event.wheelDelta) {
+                delta = event.wheelDelta;
+            } else if (event.detail !== 0) {
+                delta = event.detail;
+            }
+            // chrome safari ie11 下 -1, 上 +1
+            // chrome 120, safari 12,  ie11 只支持 event.wheelDelta, firefox 不支持 wheelDelta
+            // console.log(event.wheelDelta, event.wheelDeltaX, event.wheelDeltaY); 
+            // firefox detail, 下 +1, 上 -1,  除了firefox都是0
+            // console.log(event.detail);
+            
+            var step = scroll.opt.step * (delta > 0 ? -1 : 1),
+                content = scroll.content,
+                top = (content.scrollTop += step),
+                maxTop = content.scrollHeight - content.offsetHeight;
+            if (0 < top && top < maxTop) {
+                event.preventDefault();
+            } else if ( top < 0 ) {
+                top = 0;
+            } else if ( maxTop < top ) {
+                top = maxTop;
+            }
+
+            view.update(scroll, top);
         }
     };
 
     // 展示对象, 操作dom
     var view = {
-        setContainerWH: function (container, width, height) {
-            if (container) {
-                var width = width !== undefined ? 'width:' + width + 'px;' : 'width:auto;';
-                var height = height !== undefined ? 'height:' + height + 'px;' : 'height:auto;';
-                container.style.cssText += ';' + width + height + ';';
-            }
+        searchUp: function (node, attrName) {
+            if (node === handleEvent.body || node === document) 
+                return undefined;
+            if (node.getAttribute(attrName))
+                return node;
+            else
+                return this.searchUp(node.parentNode, attrName);
         },
-        getContainerOffset: function(node, offset) {
+        getOffset: function(node, offset) {
+            offset = offset ? offset : {top: 0, left: 0};
             if (node === null || node === document) return offset;
                 offset.top += node.offsetTop;
                 offset.left += node.offsetLeft;
-            return this.getContainerOffset(node.offsetParent, offset);
+            return this.getOffset(node.offsetParent, offset);
         },
-        searchUp: function (node, type) {
-            if (node === handleEvent.body || node === document) return undefined;   // 向上递归到body就停
-            var arr = typeof node.className === 'string' && node.className.split(' ');
-            if (arr) {
-                for (var i = 0, len = arr.length; i < len; i++) {
-                    if (arr[i] === type) {
-                        return node;
-                    }
-                }
+        // 测试是否适合启用滚动条插件
+        testingScroll: function(node) {
+            return !(node.scrollHeight === node.clientHeight);
+        },
+        // 优化方法, 缓存内容区的高度, 用于计算是否高度是否发生变化
+        cacheHeight: function (offsetHeight) {
+            var height = offsetHeight;
+            this.cacheHeight = function(offsetHeight) {
+                if (arguments.length === 0)
+                    return height;
+                height = offsetHeight;
             }
-            return this.searchUp(node.parentNode, type);
         },
-        create: function (grid, node, className) {
+        create: function (content, opt) {
+            var container = document.createElement("div"),
+                rail = document.createElement("div"),
+                bar = document.createElement("div");
+            container.className = SCROLL_CONTAINER + ' ' + opt.className;
+            rail.className = SCROLL_VERTICAL_RAIL;
+            bar.className = SCROLL_VERTICAL_BAR;
+            bar.setAttribute(SCROLL_CONTAINER_INDEX, opt.index);
+            container.appendChild(rail);
+            container.appendChild(bar);
+            content.parentNode.insertBefore(container, content);
+            container.appendChild(content);
+            // 优化: 缓存高度, 用于计算是否高度是否发生变化
+            this.cacheHeight(content.offsetHeight);
+            view.render(container, content, rail, bar, opt);
+            return {
+                container: container,
+                rail: rail,
+                bar: bar
+            };
         },
-        update: function (grid, element, node, className) {
+        update: function (scroll, top) {
+            // 检测到内容区是否需要滚动条
+            if (this.testingScroll(scroll.content)) {
+                scroll.container.removeAttribute(SCROLL_CONTAINER_HIDE);
+                // 优化: 缓存高度, 用于计算是否高度是否发生变化
+                this.cacheHeight(scroll.content.offsetHeight);
+                this.render(scroll.container, scroll.content, 
+                    scroll.rail, scroll.bar, scroll.opt, top);
+            } else {
+                scroll.container.setAttribute(SCROLL_CONTAINER_HIDE, SCROLL_CONTAINER_HIDE);
+            }
         },
-        clear: function (container) {
+        remove: function (container, content, rail, bar) {
+            var parentNode = container.parentNode;
+            content.removeAttribute(SCROLL_CONTAINER_INDEX);
+            parentNode.insertBefore(content, container);
+            parentNode.removeChild(container);
         },
-        remove: function (id) {
-        },
-        render: function (data, elements, container, grid) {
+        render: function(container, content, rail, bar, opt, top) {
+            var top = top || 0,
+                railX = 0, 
+                railY = 0,
+                barX = 0,
+                barY = 0, 
+                barH = 0,
+                contentOffsetW = content.offsetWidth,
+                contentOffsetH = content.offsetHeight,
+                contentScrollH = content.scrollHeight;
+
+            railX = contentOffsetW - rail.offsetWidth - opt.distance;
+            barX = contentOffsetW - bar.offsetWidth - opt.distance;
+            
+            barH = contentOffsetH / contentScrollH * contentOffsetH;
+            if (barH < bar.offsetHeight)
+                barH = bar.offsetHeight;
+            
+            barY = top / (contentScrollH - contentOffsetH) * (contentOffsetH - barH);
+
+            rail.style.cssText = ';left:' + railX + 'px;top:' + railY + 'px;';
+            bar.style.cssText = ';left:' + barX + 'px;top:' + barY + 'px;' + 'height:'+barH+'px;';
         }
     };
 
     // 滚动条对象
-    function Scroll(options, container, originalData) {
-        // 兼容多种配置情况
-        if (Array.isArray(options) && originalData === undefined) {
-            originalData = options;
-            options = undefined;
-        }
-        this.init(extend(setting, options), container, originalData);
+    function Scroll(content, options, index) {
+        this.opt = utils.extend(setting, options);
+        this.opt.index = index;
+        this.content = content;
+        var map = view.create(content, this.opt);
+        this.container = map.container;
+        this.rail = map.rail;
+        this.bar = map.bar;
     }
 
-    // 网格对象原型
     Scroll.prototype = {
-        constructor: Grid,
-        init: function (opt, container, originalData) {
-        },
+        constructor: Scroll,
         destroy: function () {
+            view.remove(this.container, this.content, this.rail, this.bar);
+            this.opt = undefined;
+            this.content = undefined;
+            this.container = undefined;
+            this.rail = undefined;
+            this.bar = undefined;
+            return this;
         },
-        load: function (isload) {
-        },
-        resize: function (containerW, containerH) {
-        },
-        add: function (n, isload) {
-        },
-        delete: function (id, isload) {
-        },
-        edit: function (n, isload) {
-        },
-        query: function (id) {
-        },
-        setDraggable: function (draggable) {
-        },
-        clone: function (node) {
-            var obj = {};
-            for (var attr in node)
-                if (node.hasOwnProperty(attr))
-                    obj[attr] = node[attr];
-            return obj;
+        // 更新配置, 实时生效
+        load: function (options) {
         }
     };
 
+    function checkSelector(selector) {
+
+    }
+
     // 构建实例
-    function instance(options, container, originalData) {
-        // 初始化监听, 单例, 仅绑定一次
-        handleEvent.init(true, document.body);
-        // 判断容器
-        if (!container)
-            container = document.querySelector('.' + GRID_CONTAINER);
-        else if (typeof jQuery === "object" && container instanceof jQuery)
-            container = container[0];
+    function instance(selector, options) {
+        var content = document.querySelector(selector);
+        if (!content) 
+            throw new Error('scrollbar selector is invalid');
+        // 如果检测到内容区不需要滚动条, 则不创建
+        if (!view.testingScroll(content))
+            return;
+        // 初始化监听
+        handleEvent.init(true);
         // 设置编号
-        var index = GRID_CONTAINER + cache.count++;
-        if (!container.getAttribute(GRID_CONTAINER_INDEX))
-            container.setAttribute(GRID_CONTAINER_INDEX, index);
-        cache[index] = new Scroll(options, container, originalData);
-        ;
-        return cache[index];
+        var index = content.getAttribute(SCROLL_CONTAINER_INDEX);
+        // 如果存在直接返回
+        if (index) return cache[index];
+        index = ++cache.count;
+        content.setAttribute(SCROLL_CONTAINER_INDEX, index);
+        return cache[index] = new Scroll(content, options, index);
     }
 
     // 销毁实例
-    function destroy(obj) {
-        delete cache[obj.opt.container.getAttribute(GRID_CONTAINER_INDEX)];
-        obj.destroy();
-        obj = null;
+    function destroy(scroll) {
+        if (!scroll) return;
+        delete cache[scroll.opt.index];
+        scroll.destroy();
+        scroll = null;
     }
 
     scrollbar = {
