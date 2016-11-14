@@ -25,8 +25,8 @@
         THROTTLE_WHEEL_TIME = 10,       // wheel的节流函数的时间间隔, 单位ms, FPS = 1000 / x
         SCROLL_CONTAINER_INDEX = 'pt-scrollbar-container-index',    // 容器自定义属性
         SCROLL_CONTAINER = 'pt-scrollbar-container',                // 容器 className
-        SCROLL_CONTAINER_HIDE = 'data-pt-scrollbar-hide',           // 容器 隐藏 attribute
-        SCROLL_CONTAINER_SHOW = 'data-pt-scrollbar-show',           // 容器 显示 attribute
+        SCROLL_CONTAINER_HOVER = 'pt-scrollbar-hover',              // 容器 悬停 attribute
+        SCROLL_CONTAINER_HIDE = 'pt-scrollbar-hide',                // 容器 隐藏 attribute
         SCROLL_VERTICAL_RAIL = 'pt-scroll-vertical-rail',           // 垂直滑轨 className
         SCROLL_VERTICAL_BAR = 'pt-scroll-vertical-bar',             // 垂直滑块 className
         SCROLL_HORIZONTAL_RAIL = 'pt-scroll-horizontal-rail',       // 水平滑轨 className
@@ -38,8 +38,9 @@
         step: 20,               // 每次滑动的步长, 默认20px
         className: '',          // 给外层容器添加自定义class, 方便定制换肤, 默认为''
         distance: 0,            // 距离边的间距, 建议采用css来控制间距, 默认 0
-        // height: 0,              // 设置容器的高度, 初始化滚动条, 建议css先预置高度, 插件自动计算高, 默认 0
-        // width: 0,               // 设置容器的宽度, 初始化滚动条, 建议css先预置宽度, 插件自动计算宽, 默认 0
+        minHeight: 40,          // 垂直滚动条滑块的最小高度, 默认40px
+        minWidth: 40,           // 水平滚动条滑块的最小宽度, 默认40px
+        allowScroll : true,     // 滚到内容区边界, 是否允许触发其他的滚动事件, 默认true
     };
 
     // 缓存对象
@@ -85,6 +86,7 @@
     // 事件处理对象
     var handleEvent = {
         isDrag: false,              // 是否正在拖拽
+        isHover: false,             // 是否悬停
         dragElement: null,          // 拖拽的滑块
         init: function (isbind) {
             if (this.isbind) return;
@@ -98,8 +100,9 @@
             document.addEventListener('mousemove', this.mousemove, false);
             document.addEventListener('mouseup', this.mouseup, false);
             document.addEventListener('mouseover', this.mouseover, false);
-            document.addEventListener('DOMMouseScroll', this.wheel, false);
-            document.addEventListener('mousewheel', this.wheel, false);
+            document.addEventListener('mouseout', this.mouseout, false);
+            document.addEventListener('DOMMouseScroll', this.wheelBubble, false);
+            document.addEventListener('mousewheel', this.wheelBubble, false);
             this.isbind = true;
         },
         unbindEvent: function () {
@@ -108,8 +111,9 @@
             document.removeEventListener('mousemove', this.mousemove, false);
             document.removeEventListener('mouseup', this.mouseup, false);
             document.removeEventListener('mouseover', this.mouseover, false);
-            document.removeEventListener('DOMMouseScroll', this.wheel, false);
-            document.removeEventListener('mousewheel', this.wheel, false);
+            document.removeEventListener('mouseout', this.mouseout, false);
+            document.removeEventListener('DOMMouseScroll', this.wheelBubble, false);
+            document.removeEventListener('mousewheel', this.wheelBubble, false);
             this.isbind = false;
         },
         resize: function(event) {
@@ -117,7 +121,7 @@
             for (var prop in cache) {
                 var scroll = cache[prop];
                 if (scroll instanceof Scroll) {
-                    view.update(scroll);
+                    view.update(scroll, scroll.content.scrollTop);
                 }
             }
         },
@@ -150,35 +154,72 @@
                 // 优化, 缓存top, 用于定位
                 var top = self.top = move * self.maxTop / self.maxMove;
                 view.update(scroll, top);
-                scroll.content.scrollTop = top
+                scroll.content.scrollTop = top;
             }
         },
         mouseup: function (event) {
             var self = handleEvent;
             if (self.isDrag) {
-                self.isDrag = undefined;
-                self.offsetY = undefined;
-                self.maxMove = undefined;
-                self.maxTop = undefined;
+                self.isDrag = false;
+                self.offsetY = 0;
+                self.maxMove = 0;
+                self.maxTop = 0;
+                if (self.isHover)
+                    self.mouseout();
                 self.scroll = null;
             }
         },
         mouseover: function(event) {
             // 优化: 重置滚动条
-            var scroll = cache.get(event.target);
+            var self = handleEvent,
+                scroll = cache.get(event.target);
             if (!scroll) return;
-            if (view.cacheHeight() !== scroll.content.offsetHeight) {
-                // 这里可以优化定位 ???
-                // scroll.content.scrollTop = 0;
-                // 等比例的放大缩小
-                // console.log(scroll.content.scrollTop);
-                view.update(scroll);
-            }
+            self.scroll = scroll;
+            // 设置悬停
+            self.isHover = true;
+            scroll.container.setAttribute(SCROLL_CONTAINER_HOVER, SCROLL_CONTAINER_HOVER);
+            // 更新滚动条
+            view.update(scroll, scroll.content.scrollTop);
         },
         mouseout: function(event) {
+            var self = handleEvent;
+            // 设置悬停
+            if (self.isHover && self.isDrag === false) {
+                self.isHover = false;
+                if (!self.scroll) return;
+                self.scroll.container.removeAttribute(SCROLL_CONTAINER_HOVER);
+                self.scroll = null;
+            }
+        },
+        // 优化: 滚动条嵌套情况需要冒泡
+        wheelBubble: function(event) {
+            var arr = []
+                self = handleEvent;
+            // 初始冒泡队列
+            var ele = view.searchUp(event.target, SCROLL_CONTAINER_INDEX);
+            if (!ele) return;
+            while (ele) {
+                arr.push({
+                    fun: self.wheel,
+                    evt: {
+                        target: ele,
+                        wheelDelta: event.wheelDelta,
+                        detail: event.detail,
+                        preventDefault: event.preventDefault
+                    },
+                    scroll: cache[ele.getAttribute(SCROLL_CONTAINER_INDEX)]
+                });
+                ele = view.searchUp(ele.parentNode, SCROLL_CONTAINER_INDEX);
+            }
+            // 执行冒泡队列
+            var bubble;
+            for (var i = 0, len = arr.length; i < len; i++) {
+                bubble = arr[i];
+                bubble.fun(bubble.evt, bubble.scroll);
+            }
         },
         wheel: function(event, scroll) {
-            if (!utils.throttle(new Date().getTime(), THROTTLE_WHEEL_TIME)) return;
+            // if (!utils.throttle(new Date().getTime(), THROTTLE_WHEEL_TIME)) return;
             scroll = scroll || cache.get(event.target);
             if (!scroll) return;
 
@@ -187,17 +228,17 @@
             if (event.detail) { delta = event.detail / 3; }
             
             var step = scroll.opt.step * delta,
+                opt = scroll.opt,
                 content = scroll.content,
                 top = (content.scrollTop += step),
                 maxTop = content.scrollHeight - content.offsetHeight;
             if (0 < top && top < maxTop) {
-                event.preventDefault && event.preventDefault();
+                opt.allowScroll && event.preventDefault();
             } else if ( top < 0 ) {
                 top = 0;
             } else if ( maxTop < top ) {
                 top = maxTop;
             }
-
             view.update(scroll, top);
         }
     };
@@ -223,15 +264,6 @@
         testingScroll: function(node) {
             return !(node.scrollHeight === node.clientHeight);
         },
-        // 优化方法, 缓存内容区的高度, 用于计算是否高度是否发生变化
-        cacheHeight: function (offsetHeight) {
-            var height = offsetHeight;
-            this.cacheHeight = function(offsetHeight) {
-                if (arguments.length === 0)
-                    return height;
-                height = offsetHeight;
-            }
-        },
         create: function (content, opt) {
             var container = document.createElement("div"),
                 rail = document.createElement("div"),
@@ -244,8 +276,6 @@
             container.appendChild(bar);
             content.parentNode.insertBefore(container, content);
             container.appendChild(content);
-            // 优化: 缓存高度, 用于计算是否高度是否发生变化
-            this.cacheHeight(content.offsetHeight);
             view.render(container, content, rail, bar, opt);
             return {
                 container: container,
@@ -257,8 +287,6 @@
             // 检测到内容区是否需要滚动条
             if (this.testingScroll(scroll.content)) {
                 scroll.container.removeAttribute(SCROLL_CONTAINER_HIDE);
-                // 优化: 缓存高度, 用于计算是否高度是否发生变化
-                this.cacheHeight(scroll.content.offsetHeight);
                 this.render(scroll.container, scroll.content, 
                     scroll.rail, scroll.bar, scroll.opt, top);
             } else {
@@ -280,16 +308,20 @@
                 barH = 0,
                 contentOffsetW = content.offsetWidth,
                 contentOffsetH = content.offsetHeight,
-                contentScrollH = content.scrollHeight;
+                contentScrollH = content.scrollHeight,
+                maxTop = contentScrollH - contentOffsetH;
 
             railX = contentOffsetW - rail.offsetWidth - opt.distance;
             barX = contentOffsetW - bar.offsetWidth - opt.distance;
             
             barH = contentOffsetH / contentScrollH * contentOffsetH;
-            if (barH < bar.offsetHeight)
-                barH = bar.offsetHeight;
+            // 限制最小高度
+            if (barH < opt.minHeight) barH = opt.minHeight;
+            // 过滤值域
+            if (top < 0) top = 0;
+            if (top > maxTop) top = maxTop;
             
-            barY = top / (contentScrollH - contentOffsetH) * (contentOffsetH - barH);
+            barY = top / (maxTop) * (contentOffsetH - barH);
 
             rail.style.cssText = ';left:' + railX + 'px;top:' + railY + 'px;';
             bar.style.cssText = ';left:' + barX + 'px;top:' + barY + 'px;' + 'height:'+barH+'px;';
@@ -320,6 +352,13 @@
         },
         // 更新配置, 实时生效
         load: function (options) {
+            this.opt = utils.extend(setting, options);
+        },
+        update: function(top) {
+            top = top || this.content.scrollTop;
+            view.update(this, top);
+            this.content.scrollTop = top;
+            return this;
         }
     };
 

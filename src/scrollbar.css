@@ -3,16 +3,22 @@
 .pt-scrollbar-container {
 	position: relative;
 	overflow: hidden;
+	/*-webkit-user-select:none;
+    -moz-user-select:none;*/
 }
-.pt-scrollbar-container[data-pt-scrollbar-hide] .pt-scroll-vertical-rail,
-.pt-scrollbar-container[data-pt-scrollbar-hide] .pt-scroll-vertical-bar {
+.pt-scrollbar-container[pt-scrollbar-hover] .pt-scroll-vertical-rail {
+	opacity: 0.1;
+}
+.pt-scrollbar-container[pt-scrollbar-hover] .pt-scroll-vertical-bar {
+	opacity: 0.5;
+}
+.pt-scrollbar-container[pt-scrollbar-hide] .pt-scroll-vertical-rail,
+.pt-scrollbar-container[pt-scrollbar-hide] .pt-scroll-vertical-bar {
 	display: none;
 }
 /* 内容区 */
 .pt-scrollbar-container [pt-scrollbar-container-index] {
 	overflow: hidden;
-	-webkit-user-select:none;
-    -moz-user-select:none;
 }
 /* 滑轨 */
 .pt-scrollbar-container .pt-scroll-vertical-rail {
@@ -23,7 +29,7 @@
 	height: 100%;
 	min-height: 40px !important;
 	background: #000;
-	opacity: 0.1;
+	opacity: 0;
     transition: opacity 0.15s;
 }
 /* 滑块 */
@@ -34,7 +40,7 @@
     border-radius: 4px;
     min-height: 40px !important;
     background: #000;
-    opacity: 0.4;
+    opacity: 0;
     cursor: pointer;
     transition: opacity 0.15s;
 }
