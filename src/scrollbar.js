@@ -40,7 +40,7 @@
         distance: 0,            // 距离边的间距, 建议采用css来控制间距, 默认 0
         minHeight: 40,          // 垂直滚动条滑块的最小高度, 默认40px
         minWidth: 40,           // 水平滚动条滑块的最小宽度, 默认40px
-        allowScroll : true,     // 滚到内容区边界, 是否允许触发其他的滚动事件, 默认true
+        allowScroll: true,      // 滚到内容区边界, 是否允许触发其他的滚动事件, 默认允许 true
     };
 
     // 缓存对象
@@ -193,7 +193,7 @@
         },
         // 优化: 滚动条嵌套情况需要冒泡
         wheelBubble: function(event) {
-            var arr = []
+            var arr = [],
                 self = handleEvent;
             // 初始冒泡队列
             var ele = view.searchUp(event.target, SCROLL_CONTAINER_INDEX);
@@ -201,26 +201,22 @@
             while (ele) {
                 arr.push({
                     fun: self.wheel,
-                    evt: {
-                        target: ele,
-                        wheelDelta: event.wheelDelta,
-                        detail: event.detail,
-                        preventDefault: event.preventDefault
-                    },
+                    evt: event,
                     scroll: cache[ele.getAttribute(SCROLL_CONTAINER_INDEX)]
                 });
                 ele = view.searchUp(ele.parentNode, SCROLL_CONTAINER_INDEX);
             }
             // 执行冒泡队列
-            var bubble;
+            var bubble, allowScroll;
             for (var i = 0, len = arr.length; i < len; i++) {
                 bubble = arr[i];
-                bubble.fun(bubble.evt, bubble.scroll);
+                allowScroll = bubble.scroll.opt.allowScroll;
+                bubble.fun(bubble.evt, bubble.scroll, allowScroll);
+                // 如果配置false, 则阻止冒泡
+                if (allowScroll === false && i === 0) return;
             }
         },
-        wheel: function(event, scroll) {
-            // if (!utils.throttle(new Date().getTime(), THROTTLE_WHEEL_TIME)) return;
-            scroll = scroll || cache.get(event.target);
+        wheel: function(event, scroll, allowScroll) {
             if (!scroll) return;
 
             var delta = 0;
@@ -228,16 +224,14 @@
             if (event.detail) { delta = event.detail / 3; }
             
             var step = scroll.opt.step * delta,
-                opt = scroll.opt,
                 content = scroll.content,
                 top = (content.scrollTop += step),
                 maxTop = content.scrollHeight - content.offsetHeight;
+
             if (0 < top && top < maxTop) {
-                opt.allowScroll && event.preventDefault();
-            } else if ( top < 0 ) {
-                top = 0;
-            } else if ( maxTop < top ) {
-                top = maxTop;
+                event.preventDefault();
+            } else {
+                !allowScroll && event.preventDefault();    
             }
             view.update(scroll, top);
         }
