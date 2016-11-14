@@ -35,17 +35,18 @@
     // 默认设置
     var f = function () {};
     var setting = {
-        step: 40,               // 每次滑动的步长, 默认20px
+        step: 20,               // 每次滑动的步长, 默认20px
         className: '',          // 给外层容器添加自定义class, 方便定制换肤, 默认为''
         distance: 0,            // 距离边的间距, 建议采用css来控制间距, 默认 0
-        height: 0,              // 设置容器的高度, 初始化滚动条, 建议css先预置高度, 插件自动计算高, 默认 0
-        width: 0,               // 设置容器的宽度, 初始化滚动条, 建议css先预置宽度, 插件自动计算宽, 默认 0
+        // height: 0,              // 设置容器的高度, 初始化滚动条, 建议css先预置高度, 插件自动计算高, 默认 0
+        // width: 0,               // 设置容器的宽度, 初始化滚动条, 建议css先预置宽度, 插件自动计算宽, 默认 0
     };
 
     // 缓存对象
     var cache = {
         count: 0,
         get: function (node) {
+            if (!node) return undefined;
             var content = view.searchUp(node, SCROLL_CONTAINER_INDEX);
             if(!content) return undefined;
             return cache[content.getAttribute(SCROLL_CONTAINER_INDEX)]
@@ -96,6 +97,7 @@
             document.addEventListener('mousedown', this.mousedown, false);
             document.addEventListener('mousemove', this.mousemove, false);
             document.addEventListener('mouseup', this.mouseup, false);
+            document.addEventListener('mouseover', this.mouseover, false);
             document.addEventListener('DOMMouseScroll', this.wheel, false);
             document.addEventListener('mousewheel', this.wheel, false);
             this.isbind = true;
@@ -105,7 +107,9 @@
             document.removeEventListener('mousedown', this.mousedown, false);
             document.removeEventListener('mousemove', this.mousemove, false);
             document.removeEventListener('mouseup', this.mouseup, false);
+            document.removeEventListener('mouseover', this.mouseover, false);
             document.removeEventListener('DOMMouseScroll', this.wheel, false);
+            document.removeEventListener('mousewheel', this.wheel, false);
             this.isbind = false;
         },
         resize: function(event) {
@@ -113,13 +117,7 @@
             for (var prop in cache) {
                 var scroll = cache[prop];
                 if (scroll instanceof Scroll) {
-                    // 检测到内容区是否需要滚动条
-                    if (view.testingScroll(scroll.content)) {
-                        scroll.container.removeAttribute(SCROLL_CONTAINER_HIDE);
-                        view.update(scroll);
-                    } else {
-                        scroll.container.setAttribute(SCROLL_CONTAINER_HIDE, SCROLL_CONTAINER_HIDE);
-                    }
+                    view.update(scroll);
                 }
             }
         },
@@ -134,7 +132,7 @@
                 if (!scroll) return;
                 self.isDrag = true;
                 self.scroll = scroll;
-                self.offsetY = event.offsetY + view.getOffset(bar).top;
+                self.offsetY = event.offsetY + view.getOffset(content).top;
                 self.maxMove = content.offsetHeight - bar.offsetHeight;
                 self.maxTop = content.scrollHeight - content.offsetHeight;
             }
@@ -149,18 +147,10 @@
                     move = event.pageY - self.offsetY;
                 move < 0 && (move = 0);
                 self.maxMove < move && (move = self.maxMove);
-                var top = move * self.maxTop / self.maxMove;
+                // 优化, 缓存top, 用于定位
+                var top = self.top = move * self.maxTop / self.maxMove;
                 view.update(scroll, top);
-            }
-            // 优化: 重置滚动条
-            var scroll = cache.get(event.target);
-            if (!scroll) return;
-            if (view.cacheHeight() !== scroll.content.offsetHeight) {
-                // 这里可以优化定位 ???
-                // scroll.content.scrollTop = 0;
-                // 等比例的放大缩小
-                // console.log(scroll.content.scrollTop);
-                view.update(scroll);
+                scroll.content.scrollTop = top
             }
         },
         mouseup: function (event) {
@@ -173,29 +163,35 @@
                 self.scroll = null;
             }
         },
-        wheel: function(event) {
-            if (!utils.throttle(new Date().getTime(), THROTTLE_WHEEL_TIME)) return;
+        mouseover: function(event) {
+            // 优化: 重置滚动条
             var scroll = cache.get(event.target);
+            if (!scroll) return;
+            if (view.cacheHeight() !== scroll.content.offsetHeight) {
+                // 这里可以优化定位 ???
+                // scroll.content.scrollTop = 0;
+                // 等比例的放大缩小
+                // console.log(scroll.content.scrollTop);
+                view.update(scroll);
+            }
+        },
+        mouseout: function(event) {
+        },
+        wheel: function(event, scroll) {
+            if (!utils.throttle(new Date().getTime(), THROTTLE_WHEEL_TIME)) return;
+            scroll = scroll || cache.get(event.target);
             if (!scroll) return;
 
             var delta = 0;
-            if (event.wheelDelta) {
-                delta = event.wheelDelta;
-            } else if (event.detail !== 0) {
-                delta = event.detail;
-            }
-            // chrome safari ie11 下 -1, 上 +1
-            // chrome 120, safari 12,  ie11 只支持 event.wheelDelta, firefox 不支持 wheelDelta
-            // console.log(event.wheelDelta, event.wheelDeltaX, event.wheelDeltaY); 
-            // firefox detail, 下 +1, 上 -1,  除了firefox都是0
-            // console.log(event.detail);
+            if (event.wheelDelta) { delta = -event.wheelDelta/120; }
+            if (event.detail) { delta = event.detail / 3; }
             
-            var step = scroll.opt.step * (delta > 0 ? -1 : 1),
+            var step = scroll.opt.step * delta,
                 content = scroll.content,
                 top = (content.scrollTop += step),
                 maxTop = content.scrollHeight - content.offsetHeight;
             if (0 < top && top < maxTop) {
-                event.preventDefault();
+                event.preventDefault && event.preventDefault();
             } else if ( top < 0 ) {
                 top = 0;
             } else if ( maxTop < top ) {
@@ -326,10 +322,6 @@
         load: function (options) {
         }
     };
-
-    function checkSelector(selector) {
-
-    }
 
     // 构建实例
     function instance(selector, options) {

@@ -4,12 +4,6 @@
 	position: relative;
 	overflow: hidden;
 }
-.pt-scrollbar-container:hover .pt-scroll-vertical-rail {
-	opacity: 0.1;
-}
-.pt-scrollbar-container:hover .pt-scroll-vertical-bar {
-	opacity: 0.4;
-}
 .pt-scrollbar-container[data-pt-scrollbar-hide] .pt-scroll-vertical-rail,
 .pt-scrollbar-container[data-pt-scrollbar-hide] .pt-scroll-vertical-bar {
 	display: none;
@@ -29,7 +23,7 @@
 	height: 100%;
 	min-height: 40px !important;
 	background: #000;
-	opacity: 0;
+	opacity: 0.1;
     transition: opacity 0.15s;
 }
 /* 滑块 */
@@ -40,7 +34,7 @@
     border-radius: 4px;
     min-height: 40px !important;
     background: #000;
-    opacity: 0;
+    opacity: 0.4;
     cursor: pointer;
     transition: opacity 0.15s;
 }
