@@ -5,7 +5,7 @@
  * version: 1.0.0
  * 描述: 模仿浏览器滚动条的插件
  * 原则和思路:  不依赖任何框架和类库, 低侵入实现.
- * 兼容性: ie11+
+ * 兼容性: ie9+
  * 支持: requirejs和commonjs和seajs
  */
 ;(function (parent, fun) {
@@ -16,7 +16,7 @@
     } else if (typeof define === 'function' && typeof define.cmd === 'object') {
         define(fun);
     } else {
-        parent.scrollbar = fun().instance;
+        parent.scrollbar = fun();
     }
 })(window.pt || window, function (scrollbar) {
 
@@ -29,8 +29,11 @@
         SCROLL_CONTAINER_HIDE = 'pt-scrollbar-hide',                // 容器 隐藏 attribute
         SCROLL_VERTICAL_RAIL = 'pt-scroll-vertical-rail',           // 垂直滑轨 className
         SCROLL_VERTICAL_BAR = 'pt-scroll-vertical-bar',             // 垂直滑块 className
+        SCROLL_VERTICAL = 'pt-scroll-vertical',                     // 垂直自定义属性
         SCROLL_HORIZONTAL_RAIL = 'pt-scroll-horizontal-rail',       // 水平滑轨 className
-        SCROLL_HORIZONTAL_BAR = 'pt-scroll-horizontal-bar'          // 水平滑块 className
+        SCROLL_HORIZONTAL_BAR = 'pt-scroll-horizontal-bar',         // 水平滑块 className
+        SCROLL_HORIZONTAL = 'pt-scroll-horizontal',                 // 水平自定义属性
+        SCROLL_ATTRIBUTE_TYPE = 'pt-scroll-type';                   // 自定义属性 用于判断水平还是垂直
 
     // 默认设置
     var f = function () {};
@@ -121,7 +124,7 @@
             for (var prop in cache) {
                 var scroll = cache[prop];
                 if (scroll instanceof Scroll) {
-                    view.update(scroll, scroll.content.scrollTop);
+                    view.update(scroll, scroll.content.scrollTop, scroll.content.scrollLeft);
                 }
             }
         },
@@ -129,16 +132,25 @@
             var self = handleEvent,
                 target = event.target,         
                 className = target.className;
-            if (className === SCROLL_VERTICAL_BAR) {
-                var scroll = cache[target.getAttribute(SCROLL_CONTAINER_INDEX)],
-                    bar = scroll.bar,
-                    content = scroll.content;
+            if (className === SCROLL_VERTICAL_BAR || className === SCROLL_HORIZONTAL_BAR) {
+                var scroll = cache[target.getAttribute(SCROLL_CONTAINER_INDEX)];
                 if (!scroll) return;
+                var vBar = scroll.vBar,
+                    hBar = scroll.hBar,
+                    content = scroll.content;
                 self.isDrag = true;
                 self.scroll = scroll;
-                self.offsetY = event.offsetY + view.getOffset(content).top;
-                self.maxMove = content.offsetHeight - bar.offsetHeight;
-                self.maxTop = content.scrollHeight - content.offsetHeight;
+                // 区分是水平还是垂直
+                self.type = target.getAttribute(SCROLL_ATTRIBUTE_TYPE);
+                if (self.type === SCROLL_VERTICAL) {
+                    self.offset = view.getOffset(content).top;
+                    self.maxMove = content.offsetHeight - vBar.offsetHeight;
+                    self.maxScroll = content.scrollHeight - content.offsetHeight;
+                } else {
+                    self.offset = view.getOffset(content).left;
+                    self.maxMove = content.offsetWidth - hBar.offsetWidth;
+                    self.maxScroll = content.scrollWidth - content.offsetWidth;
+                }
             }
         },
         mousemove: function (event) {
@@ -146,24 +158,35 @@
             var self = handleEvent;
             if (self.isDrag) {
                 // 将pageY转换成top
-                var scroll = self.scroll,
-                    bar = scroll.bar,
-                    move = event.pageY - self.offsetY;
+                var move,
+                    scroll = self.scroll,
+                    top = scroll.content.scrollTop,
+                    left = scroll.content.scrollTop;
+                if (self.type === SCROLL_VERTICAL) {
+                    move = event.pageY - self.offset;
+                } else {
+                    move = event.pageX - self.offset;
+                }
                 move < 0 && (move = 0);
                 self.maxMove < move && (move = self.maxMove);
-                // 优化, 缓存top, 用于定位
-                var top = self.top = move * self.maxTop / self.maxMove;
-                view.update(scroll, top);
+                if (self.type === SCROLL_VERTICAL) {
+                    top = move * self.maxScroll / self.maxMove;
+                } else {
+                    left = move * self.maxScroll / self.maxMove;
+                }
+                view.update(scroll, top, left);
                 scroll.content.scrollTop = top;
+                scroll.content.scrollLeft = left;
             }
         },
         mouseup: function (event) {
             var self = handleEvent;
             if (self.isDrag) {
                 self.isDrag = false;
-                self.offsetY = 0;
+                self.offset = 0;
                 self.maxMove = 0;
-                self.maxTop = 0;
+                self.maxScroll = 0;
+                self.type = undefined;
                 if (self.isHover)
                     self.mouseout();
                 self.scroll = null;
@@ -179,7 +202,7 @@
             self.isHover = true;
             scroll.container.setAttribute(SCROLL_CONTAINER_HOVER, SCROLL_CONTAINER_HOVER);
             // 更新滚动条
-            view.update(scroll, scroll.content.scrollTop);
+            view.update(scroll, scroll.content.scrollTop, scroll.content.scrollLeft);
         },
         mouseout: function(event) {
             var self = handleEvent;
@@ -218,22 +241,33 @@
         },
         wheel: function(event, scroll, allowScroll) {
             if (!scroll) return;
+            var delta = 0, deltaX = 0, deltaY = 0, 
+                stepX = 0, stepY = 0, step = 0;
+            if (event.wheelDeltaX || event.wheelDeltaY) {
+                deltaX = -event.wheelDeltaX / 120;
+                deltaY = -event.wheelDeltaY / 120;
+            }
+            if (event.wheelDelta) delta = -event.wheelDelta / 120; 
+            if (event.detail) delta = event.detail / 3; 
+            // 支持横向滚动(edge, chrome, safari), 不支持则垂直滚动
+            if (deltaX === 0 && deltaY === 0) {
+                stepY = step = scroll.opt.step * delta;
+            } else {
+                stepX = scroll.opt.step * deltaX;
+                stepY = scroll.opt.step * deltaY;
+            }
+            var content = scroll.content,
+                top = (content.scrollTop += stepY),
+                left = (content.scrollLeft += stepX),
+                maxTop = content.scrollHeight - content.offsetHeight,
+                maxLeft = content.scrollHeight - content.offsetHeight;
 
-            var delta = 0;
-            if (event.wheelDelta) { delta = -event.wheelDelta/120; }
-            if (event.detail) { delta = event.detail / 3; }
-            
-            var step = scroll.opt.step * delta,
-                content = scroll.content,
-                top = (content.scrollTop += step),
-                maxTop = content.scrollHeight - content.offsetHeight;
-
-            if (0 < top && top < maxTop) {
+            if (0 < top && top < maxTop && 0 < left && left < maxLeft) {
                 event.preventDefault();
             } else {
                 !allowScroll && event.preventDefault();    
             }
-            view.update(scroll, top);
+            view.update(scroll, top, left);
         }
     };
 
@@ -256,53 +290,78 @@
         },
         // 测试是否适合启用滚动条插件
         testingScroll: function(node) {
-            return !(node.scrollHeight === node.clientHeight);
+            return !(node.scrollHeight === node.offsetHeight) 
+                        || !(node.scrollWidth === node.offsetWidth);
         },
-        create: function (content, opt) {
-            var container = document.createElement("div"),
-                rail = document.createElement("div"),
-                bar = document.createElement("div");
+        create: function (scroll, content, opt) {
+            var map = {},
+                container = document.createElement("div");
+            map.container = container;
+            // 垂直滚动条
+            if (content.scrollHeight !== content.offsetHeight) {
+                var hRail = document.createElement("div"),
+                    hBar = document.createElement("div");
+                hRail.className = SCROLL_VERTICAL_RAIL;
+                hBar.className = SCROLL_VERTICAL_BAR;
+                hBar.setAttribute(SCROLL_CONTAINER_INDEX, opt.index);
+                hBar.setAttribute(SCROLL_ATTRIBUTE_TYPE, SCROLL_VERTICAL);
+                container.appendChild(hRail);
+                container.appendChild(hBar);
+                map.hRail = hRail;
+                map.hBar = hBar;
+            }
+            // 水平滚动条
+            if (content.scrollWidth !== content.offsetWidth) {
+                var vRail = document.createElement("div"),
+                    vBar = document.createElement("div");
+                vRail.className = SCROLL_HORIZONTAL_RAIL;
+                vBar.className = SCROLL_HORIZONTAL_BAR;
+                vBar.setAttribute(SCROLL_CONTAINER_INDEX, opt.index);
+                vBar.setAttribute(SCROLL_ATTRIBUTE_TYPE, SCROLL_HORIZONTAL);
+                container.appendChild(vRail);
+                container.appendChild(vBar);
+                map.vRail = vRail;
+                map.vBar = vBar;
+            }
             container.className = SCROLL_CONTAINER + ' ' + opt.className;
-            rail.className = SCROLL_VERTICAL_RAIL;
-            bar.className = SCROLL_VERTICAL_BAR;
-            bar.setAttribute(SCROLL_CONTAINER_INDEX, opt.index);
-            container.appendChild(rail);
-            container.appendChild(bar);
             content.parentNode.insertBefore(container, content);
             container.appendChild(content);
-            view.render(container, content, rail, bar, opt);
-            return {
-                container: container,
-                rail: rail,
-                bar: bar
-            };
+            view.render(scroll);
+            return map;
         },
-        update: function (scroll, top) {
+        update: function (scroll, top, left) {
             // 检测到内容区是否需要滚动条
             if (this.testingScroll(scroll.content)) {
                 scroll.container.removeAttribute(SCROLL_CONTAINER_HIDE);
-                this.render(scroll.container, scroll.content, 
-                    scroll.rail, scroll.bar, scroll.opt, top);
+                this.render(scroll, top, left);
             } else {
                 scroll.container.setAttribute(SCROLL_CONTAINER_HIDE, SCROLL_CONTAINER_HIDE);
             }
         },
-        remove: function (container, content, rail, bar) {
+        remove: function (container, content) {
             var parentNode = container.parentNode;
             content.removeAttribute(SCROLL_CONTAINER_INDEX);
             parentNode.insertBefore(content, container);
             parentNode.removeChild(container);
         },
-        render: function(container, content, rail, bar, opt, top) {
-            var top = top || 0,
-                railX = 0, 
-                railY = 0,
-                barX = 0,
-                barY = 0, 
-                barH = 0,
+        render: function(scroll, top, left) {
+            var content = scroll.content,
                 contentOffsetW = content.offsetWidth,
                 contentOffsetH = content.offsetHeight,
-                contentScrollH = content.scrollHeight,
+                contentScrollW = content.scrollWidth,
+                contentScrollH = content.scrollHeight;
+            if (scroll.hRail && scroll.hBar) {
+                this.hRender(contentOffsetW, contentOffsetH, contentScrollH,
+                        scroll.hRail, scroll.hBar, scroll.opt, top);
+            }
+            if (scroll.vRail && scroll.vBar) {
+                this.vRender(contentOffsetW, contentOffsetH, contentScrollW,
+                        scroll.vRail, scroll.vBar, scroll.opt, left);   
+            }
+        },
+        hRender: function(contentOffsetW, contentOffsetH, contentScrollH, rail, bar, opt, top) {
+            var top = top || 0,
+                railX = 0, railY = 0, barX = 0, barY = 0, barH = 0,
                 maxTop = contentScrollH - contentOffsetH;
 
             railX = contentOffsetW - rail.offsetWidth - opt.distance;
@@ -319,6 +378,26 @@
 
             rail.style.cssText = ';left:' + railX + 'px;top:' + railY + 'px;';
             bar.style.cssText = ';left:' + barX + 'px;top:' + barY + 'px;' + 'height:'+barH+'px;';
+        },
+        vRender: function(contentOffsetW, contentOffsetH, contentScrollW, rail, bar, opt, left) {
+            var left = left || 0,
+                railX = 0, railY = 0, barX = 0, barY = 0, barW = 0,
+                maxLeft = contentScrollW - contentOffsetW;
+
+            railY = contentOffsetH - rail.offsetHeight - opt.distance;
+            barY = contentOffsetH - bar.offsetHeight - opt.distance;
+            
+            barW = contentOffsetW / contentScrollW * contentOffsetW;
+            // 限制最小宽度
+            if (barW < opt.minWidth) barW = opt.minWidth;
+            // // 过滤值域
+            if (left < 0) left = 0;
+            if (left > maxLeft) left = maxLeft;
+            
+            barX = left / (maxLeft) * (contentOffsetW - barW);
+
+            rail.style.cssText = ';left:' + railX + 'px;top:' + railY + 'px;';
+            bar.style.cssText = ';left:' + barX + 'px;top:' + barY + 'px;' + 'width:'+barW+'px;';
         }
     };
 
@@ -327,31 +406,41 @@
         this.opt = utils.extend(setting, options);
         this.opt.index = index;
         this.content = content;
-        var map = view.create(content, this.opt);
+        var map = view.create(this, content, this.opt);
         this.container = map.container;
-        this.rail = map.rail;
-        this.bar = map.bar;
+        if (map.hRail) {
+            this.hRail = map.hRail;
+            this.hBar = map.hBar;    
+        }
+        if (map.vRail) {
+            this.vRail = map.vRail;
+            this.vBar = map.vBar;    
+        }
     }
 
     Scroll.prototype = {
         constructor: Scroll,
         destroy: function () {
-            view.remove(this.container, this.content, this.rail, this.bar);
+            view.remove(this.container, this.content);
             this.opt = undefined;
             this.content = undefined;
             this.container = undefined;
-            this.rail = undefined;
-            this.bar = undefined;
+            this.hRail = undefined;
+            this.hBar = undefined;
+            this.vRail = undefined;
+            this.vBar = undefined;
             return this;
         },
         // 更新配置, 实时生效
         load: function (options) {
             this.opt = utils.extend(setting, options);
         },
-        update: function(top) {
-            top = top || this.content.scrollTop;
-            view.update(this, top);
+        update: function(top, left) {
+            top = top || 0;
+            left = left || 0;
+            view.update(this, top, left);
             this.content.scrollTop = top;
+            this.content.scrollLeft = left;
             return this;
         }
     };
