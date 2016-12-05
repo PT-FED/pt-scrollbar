@@ -27,12 +27,12 @@
         SCROLL_CONTAINER = 'pt-scrollbar-container',                // 容器 className
         SCROLL_CONTAINER_HOVER = 'pt-scrollbar-hover',              // 容器 悬停 attribute
         SCROLL_CONTAINER_HIDE = 'pt-scrollbar-hide',                // 容器 隐藏 attribute
+        SCROLL_VERTICAL = 'pt-scroll-vertical',                     // 垂直自定义属性
         SCROLL_VERTICAL_RAIL = 'pt-scroll-vertical-rail',           // 垂直滑轨 className
         SCROLL_VERTICAL_BAR = 'pt-scroll-vertical-bar',             // 垂直滑块 className
-        SCROLL_VERTICAL = 'pt-scroll-vertical',                     // 垂直自定义属性
+        SCROLL_HORIZONTAL = 'pt-scroll-horizontal',                 // 水平自定义属性
         SCROLL_HORIZONTAL_RAIL = 'pt-scroll-horizontal-rail',       // 水平滑轨 className
         SCROLL_HORIZONTAL_BAR = 'pt-scroll-horizontal-bar',         // 水平滑块 className
-        SCROLL_HORIZONTAL = 'pt-scroll-horizontal',                 // 水平自定义属性
         SCROLL_ATTRIBUTE_TYPE = 'pt-scroll-type';                   // 自定义属性 用于判断水平还是垂直
 
     // 默认设置
@@ -135,20 +135,18 @@
             if (className === SCROLL_VERTICAL_BAR || className === SCROLL_HORIZONTAL_BAR) {
                 var scroll = cache[target.getAttribute(SCROLL_CONTAINER_INDEX)];
                 if (!scroll) return;
-                var vBar = scroll.vBar,
-                    hBar = scroll.hBar,
-                    content = scroll.content;
+                var content = scroll.content;
                 self.isDrag = true;
                 self.scroll = scroll;
-                // 区分是水平还是垂直
                 self.type = target.getAttribute(SCROLL_ATTRIBUTE_TYPE);
+                // 区分是水平还是垂直
                 if (self.type === SCROLL_VERTICAL) {
-                    self.offset = view.getOffset(content).top;
-                    self.maxMove = content.offsetHeight - vBar.offsetHeight;
+                    self.offset = view.getOffset(content).top + event.offsetY;
+                    self.maxMove = content.offsetHeight - scroll.vBar.offsetHeight;
                     self.maxScroll = content.scrollHeight - content.offsetHeight;
                 } else {
-                    self.offset = view.getOffset(content).left;
-                    self.maxMove = content.offsetWidth - hBar.offsetWidth;
+                    self.offset = view.getOffset(content).left + event.offsetX;
+                    self.maxMove = content.offsetWidth - scroll.hBar.offsetWidth;
                     self.maxScroll = content.scrollWidth - content.offsetWidth;
                 }
             }
@@ -161,7 +159,7 @@
                 var move,
                     scroll = self.scroll,
                     top = scroll.content.scrollTop,
-                    left = scroll.content.scrollTop;
+                    left = scroll.content.scrollLeft;
                 if (self.type === SCROLL_VERTICAL) {
                     move = event.pageY - self.offset;
                 } else {
@@ -299,29 +297,29 @@
             map.container = container;
             // 垂直滚动条
             if (content.scrollHeight !== content.offsetHeight) {
-                var hRail = document.createElement("div"),
-                    hBar = document.createElement("div");
-                hRail.className = SCROLL_VERTICAL_RAIL;
-                hBar.className = SCROLL_VERTICAL_BAR;
-                hBar.setAttribute(SCROLL_CONTAINER_INDEX, opt.index);
-                hBar.setAttribute(SCROLL_ATTRIBUTE_TYPE, SCROLL_VERTICAL);
-                container.appendChild(hRail);
-                container.appendChild(hBar);
-                map.hRail = hRail;
-                map.hBar = hBar;
-            }
-            // 水平滚动条
-            if (content.scrollWidth !== content.offsetWidth) {
                 var vRail = document.createElement("div"),
                     vBar = document.createElement("div");
-                vRail.className = SCROLL_HORIZONTAL_RAIL;
-                vBar.className = SCROLL_HORIZONTAL_BAR;
+                vRail.className = SCROLL_VERTICAL_RAIL;
+                vBar.className = SCROLL_VERTICAL_BAR;
                 vBar.setAttribute(SCROLL_CONTAINER_INDEX, opt.index);
-                vBar.setAttribute(SCROLL_ATTRIBUTE_TYPE, SCROLL_HORIZONTAL);
+                vBar.setAttribute(SCROLL_ATTRIBUTE_TYPE, SCROLL_VERTICAL);
                 container.appendChild(vRail);
                 container.appendChild(vBar);
                 map.vRail = vRail;
                 map.vBar = vBar;
+            }
+            // 水平滚动条
+            if (content.scrollWidth !== content.offsetWidth) {
+                var hRail = document.createElement("div"),
+                    hBar = document.createElement("div");
+                hRail.className = SCROLL_HORIZONTAL_RAIL;
+                hBar.className = SCROLL_HORIZONTAL_BAR;
+                hBar.setAttribute(SCROLL_CONTAINER_INDEX, opt.index);
+                hBar.setAttribute(SCROLL_ATTRIBUTE_TYPE, SCROLL_HORIZONTAL);
+                container.appendChild(hRail);
+                container.appendChild(hBar);
+                map.hRail = hRail;
+                map.hBar = hBar;
             }
             container.className = SCROLL_CONTAINER + ' ' + opt.className;
             content.parentNode.insertBefore(container, content);
@@ -350,16 +348,18 @@
                 contentOffsetH = content.offsetHeight,
                 contentScrollW = content.scrollWidth,
                 contentScrollH = content.scrollHeight;
-            if (scroll.hRail && scroll.hBar) {
-                this.hRender(contentOffsetW, contentOffsetH, contentScrollH,
-                        scroll.hRail, scroll.hBar, scroll.opt, top);
-            }
+            // 垂直滚动条
             if (scroll.vRail && scroll.vBar) {
-                this.vRender(contentOffsetW, contentOffsetH, contentScrollW,
-                        scroll.vRail, scroll.vBar, scroll.opt, left);   
+                this.vRender(contentOffsetW, contentOffsetH, contentScrollH,
+                        scroll.vRail, scroll.vBar, scroll.opt, top);   
+            }
+            // 水平滚动条
+            if (scroll.hRail && scroll.hBar) {
+                this.hRender(contentOffsetW, contentOffsetH, contentScrollW,
+                        scroll.hRail, scroll.hBar, scroll.opt, left);
             }
         },
-        hRender: function(contentOffsetW, contentOffsetH, contentScrollH, rail, bar, opt, top) {
+        vRender: function(contentOffsetW, contentOffsetH, contentScrollH, rail, bar, opt, top) {
             var top = top || 0,
                 railX = 0, railY = 0, barX = 0, barY = 0, barH = 0,
                 maxTop = contentScrollH - contentOffsetH;
@@ -379,7 +379,7 @@
             rail.style.cssText = ';left:' + railX + 'px;top:' + railY + 'px;';
             bar.style.cssText = ';left:' + barX + 'px;top:' + barY + 'px;' + 'height:'+barH+'px;';
         },
-        vRender: function(contentOffsetW, contentOffsetH, contentScrollW, rail, bar, opt, left) {
+        hRender: function(contentOffsetW, contentOffsetH, contentScrollW, rail, bar, opt, left) {
             var left = left || 0,
                 railX = 0, railY = 0, barX = 0, barY = 0, barW = 0,
                 maxLeft = contentScrollW - contentOffsetW;
