@@ -28,7 +28,7 @@
 }
 /* 垂直滑轨 */
 .pt-scrollbar-container .pt-scroll-vertical-rail {
-	z-index: 2147483646;
+	z-index: 100;
 	position: absolute;
 	width: 6px;
 	border-radius: 4px;
@@ -39,7 +39,7 @@
 }
 /* 垂直滑块 */
 .pt-scrollbar-container .pt-scroll-vertical-bar {
-	z-index: 2147483647;
+	z-index: 101;
 	position: absolute;
     width: 6px;
     border-radius: 4px;
@@ -50,7 +50,7 @@
 }
 /* 水平滑轨 */
 .pt-scrollbar-container .pt-scroll-horizontal-rail {
-	z-index: 2147483646;
+	z-index: 100;
 	position: absolute;
 	height: 6px;
 	border-radius: 4px;
@@ -61,7 +61,7 @@
 }
 /* 水平滑块 */
 .pt-scrollbar-container .pt-scroll-horizontal-bar {
-	z-index: 2147483647;
+	z-index: 101;
 	position: absolute;
     height: 6px;
     border-radius: 4px;

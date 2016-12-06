@@ -2,7 +2,7 @@
 /**
  * Copyright (c) 2016 tm-roamer
  * https://github.com/PT-FED/pt-scrollbar
- * version: 1.0.0
+ * version: 1.0.1
  * 描述: 模仿浏览器滚动条的插件
  * 原则和思路:  不依赖任何框架和类库, 低侵入实现.
  * 兼容性: ie9+
@@ -473,7 +473,7 @@
     }
 
     scrollbar = {
-        version: "1.0.0",
+        version: "1.0.1",
         instance: instance,
         destroy: destroy
     };

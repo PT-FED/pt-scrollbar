@@ -1,6 +1,6 @@
 {
   "name": "scrollbar",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "author": "tm-roamer",
   "description": "scrollbar.js is a plugin for Browser ScrollBar",
   "main": "index.js",
